@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.7
+#
+# Production multi-arch image for tmkms (softsign mode only).
+# Built and published by .github/workflows/docker-publish.yml.
+#
+# The upstream Dockerfile is for the integration test harness — this is the
+# one we ship.
+
+FROM rust:1.86-slim-bookworm AS build
+
+# softsign is the only provider this image enables. To add yubihsm/ledger,
+# bump --features and add the corresponding system libs below.
+ARG FEATURES=softsign
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config \
+        libsodium-dev \
+        libusb-1.0-0-dev \
+        clang \
+        cmake \
+        git \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+RUN cargo build --release --no-default-features --features=${FEATURES} \
+    && strip /src/target/release/tmkms
+
+###################################################################
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsodium23 \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 tmkms \
+    && useradd --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin tmkms
+
+COPY --from=build /src/target/release/tmkms /usr/local/bin/tmkms
+
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/tmkms"]
