@@ -6,7 +6,7 @@
 # The upstream Dockerfile is for the integration test harness — this is the
 # one we ship.
 
-FROM rust:1.83-slim-bookworm AS build
+FROM rust:1.86-slim-bookworm AS build
 
 # softsign is the only provider this image enables. To add yubihsm/ledger,
 # bump --features and add the corresponding system libs below.
