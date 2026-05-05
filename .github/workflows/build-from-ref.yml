@@ -1,0 +1,61 @@
+name: build-from-ref
+
+# Manually-triggerable workflow: builds the image from any ref (typically a
+# release tag like v0.15.0) using Dockerfile.publish from main. Useful when
+# a release tag inherited from upstream doesn't carry our build files and
+# we don't want to force-retag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to check out and build (e.g. v0.15.0, main, a SHA)'
+        required: true
+        default: 'v0.15.0'
+      image_tag:
+        description: 'Image tag to publish (e.g. 0.15.0)'
+        required: true
+        default: '0.15.0'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Check out the source we want to build (e.g. v0.15.0).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # 2. Bring Dockerfile.publish in from main on top of that source tree.
+      #    The ref may pre-date Dockerfile.publish — this overlays it.
+      - name: Pull Dockerfile.publish from main
+        run: |
+          curl -sfL "https://raw.githubusercontent.com/${{ github.repository }}/main/Dockerfile.publish" -o Dockerfile.publish
+          test -s Dockerfile.publish && head -1 Dockerfile.publish
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.publish
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ inputs.image_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ inputs.ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
