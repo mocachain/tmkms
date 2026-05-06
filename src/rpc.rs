@@ -19,7 +19,8 @@ pub enum Request {
     SignProposal(Proposal),
     /// Sign the given vote
     SignVote((Vote, bool)), // skip_extension_signing
-    SignRawBytes(proto::privval::celestia::SignRawBytesRequest),
+    /// Sign a moca-cometbft randao reveal (greenfield-derived).
+    SignReveal(proto::privval::moca::SignRevealRequest),
     ShowPublicKey,
     PingRequest,
 }
@@ -49,9 +50,9 @@ impl Request {
                     chain_id,
                 },
             )) => (Request::SignProposal(proposal.try_into()?), chain_id),
-            Some(proto::privval::message::Sum::SignRawBytesRequest(req)) => {
+            Some(proto::privval::message::Sum::SignRevealRequest(req)) => {
                 let chain_id = req.chain_id.clone();
-                (Request::SignRawBytes(req), chain_id)
+                (Request::SignReveal(req), chain_id)
             }
             Some(proto::privval::message::Sum::PubKeyRequest(req)) => {
                 (Request::ShowPublicKey, req.chain_id)
@@ -94,7 +95,7 @@ impl Request {
 pub enum Response {
     SignedVote(proto::privval::v1beta1::SignedVoteResponse),
     SignedProposal(proto::privval::v1beta1::SignedProposalResponse),
-    SignedRawBytes(proto::privval::celestia::SignedRawBytesResponse),
+    SignedReveal(proto::privval::moca::SignedRevealResponse),
     Ping(proto::privval::v1beta1::PingResponse),
     PublicKey(proto::privval::v1beta1::PubKeyResponse),
 }
@@ -107,8 +108,8 @@ impl Response {
             Response::SignedProposal(resp) => {
                 proto::privval::message::Sum::SignedProposalResponse(resp)
             }
-            Response::SignedRawBytes(resp) => {
-                proto::privval::message::Sum::SignedRawBytesResponse(resp)
+            Response::SignedReveal(resp) => {
+                proto::privval::message::Sum::SignedRevealResponse(resp)
             }
             Response::Ping(resp) => proto::privval::message::Sum::PingResponse(resp),
             Response::PublicKey(resp) => proto::privval::message::Sum::PubKeyResponse(resp),
