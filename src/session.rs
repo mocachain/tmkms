@@ -12,7 +12,7 @@ use crate::{
 };
 use cometbft::{CometbftKey, consensus};
 use cometbft_config::net;
-use prost::Message;
+use sha2::{Digest, Sha256};
 use std::{os::unix::net::UnixStream, time::Instant};
 
 /// Encrypted session with a validator node
@@ -113,7 +113,7 @@ impl Session {
             Request::SignProposal(_) | Request::SignVote(_) => {
                 self.sign_consensus_msg(request.into_consensus_msg()?)?
             }
-            Request::SignRawBytes(req) => self.sign_raw(req)?,
+            Request::SignReveal(req) => self.sign_reveal(req)?,
 
             // non-signable requests:
             Request::PingRequest => Response::Ping(proto::privval::v1beta1::PingResponse {}),
@@ -176,14 +176,17 @@ impl Session {
         Ok(msg.into())
     }
 
-    /// Sign a raw (non-consensus) message.
-    fn sign_raw(
+    /// Sign a moca-cometbft randao reveal.
+    ///
+    /// Per moca-cometbft `privval/file.go:SignReveal`, signable bytes are
+    /// `sha256(chain_id + "/") || u64-be(height)` — signed with the same
+    /// consensus ed25519 key used for votes/proposals. The same input
+    /// produces a deterministic ed25519 output, so no double-sign tracking
+    /// is needed (unlike vote/proposal signing).
+    fn sign_reveal(
         &mut self,
-        req: proto::privval::celestia::SignRawBytesRequest,
+        req: proto::privval::moca::SignRevealRequest,
     ) -> Result<Response, Error> {
-        /// Domain separation prefix to prevent confusion with consensus message signatures.
-        const PREFIX: &[u8] = b"COMET::RAW_BYTES::SIGN";
-
         ensure!(
             req.chain_id == self.config.chain_id.as_str(),
             ChainIdError,
@@ -192,18 +195,24 @@ impl Session {
             &self.config.chain_id,
         );
 
-        assert_eq!(self.config.chain_id.as_str(), &req.chain_id);
+        let reveal = req
+            .reveal
+            .ok_or_else(|| format_err!(ProtocolError, "SignRevealRequest missing reveal"))?;
+
+        let height = reveal.height;
 
         let registry = chain::REGISTRY.get();
-
         let chain = registry
             .get_chain(&self.config.chain_id)
             .unwrap_or_else(|| {
                 panic!("chain '{}' missing from registry!", &self.config.chain_id);
             });
 
-        let mut signable_bytes = Vec::from(PREFIX);
-        req.encode_length_delimited(&mut signable_bytes)?;
+        // signable = sha256(chain_id + "/") || u64-be(height)
+        let chain_id_hash = Sha256::digest(format!("{}/", &req.chain_id).as_bytes());
+        let mut signable_bytes = Vec::with_capacity(chain_id_hash.len() + 8);
+        signable_bytes.extend_from_slice(&chain_id_hash);
+        signable_bytes.extend_from_slice(&(height as u64).to_be_bytes());
 
         // TODO(tarcieri): support for non-default public keys
         let public_key = None;
@@ -211,14 +220,22 @@ impl Session {
         let sig = chain.keyring.sign(public_key, &signable_bytes)?;
 
         info!(
-            "[{}@{}] signed raw bytes: {} ({} ms)",
+            "[{}@{}] signed Reveal at height {} ({} ms)",
             &self.config.chain_id,
             &self.config.addr,
-            &req.unique_id,
+            height,
             started_at.elapsed().as_millis(),
         );
 
-        Ok(Response::SignedRawBytes(sig.into()))
+        Ok(Response::SignedReveal(
+            proto::privval::moca::SignedRevealResponse {
+                reveal: Some(proto::privval::moca::Reveal {
+                    height,
+                    signature: sig.to_vec(),
+                }),
+                error: None,
+            },
+        ))
     }
 
     /// If a max block height is configured, ensure the block we're signing

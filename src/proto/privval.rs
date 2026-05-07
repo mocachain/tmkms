@@ -2,10 +2,14 @@
 
 pub mod celestia;
 pub mod message;
+pub mod moca;
 
 pub use cometbft_proto::privval::v1beta1;
 
-/// Message type containing the `celestia` extensions
+/// Message type with moca-cometbft (Greenfield) extensions.
+///
+/// Note: tags 7/8 are `SignReveal` (moca-specific), and Ping is shifted to
+/// 9/10. This is wire-incompatible with vanilla CometBFT and Celestia.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Message {

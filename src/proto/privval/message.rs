@@ -1,9 +1,11 @@
-//! Vendored from:
-//! <https://github.com/cometbft/tendermint-rs/commit/d7ce755d56826e8c5fbe1d059fb5ab1e2cab7c5b>
+//! moca-cometbft privval message oneof.
 //!
-//! See `celestia.rs` for more information.
+//! Tag 7/8 carry the moca/Greenfield-specific `SignReveal` RPC; Ping is
+//! shifted to 9/10. This is wire-incompatible with both vanilla CometBFT
+//! and Celestia (originally vendored from tendermint-rs), but matches
+//! greenfield-cometbft / moca-cometbft.
 
-use super::{celestia, v1beta1};
+use super::{moca, v1beta1};
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -20,14 +22,16 @@ pub enum Sum {
     SignProposalRequest(v1beta1::SignProposalRequest),
     #[prost(message, tag = "6")]
     SignedProposalResponse(v1beta1::SignedProposalResponse),
-    #[prost(message, tag = "7")]
-    PingRequest(v1beta1::PingRequest),
-    #[prost(message, tag = "8")]
-    PingResponse(v1beta1::PingResponse),
 
-    // Celestia extensions
+    // Moca/Greenfield extensions.
+    #[prost(message, tag = "7")]
+    SignRevealRequest(moca::SignRevealRequest),
+    #[prost(message, tag = "8")]
+    SignedRevealResponse(moca::SignedRevealResponse),
+
+    // Ping shifted from 7/8 -> 9/10 in moca-cometbft.
     #[prost(message, tag = "9")]
-    SignRawBytesRequest(celestia::SignRawBytesRequest),
+    PingRequest(v1beta1::PingRequest),
     #[prost(message, tag = "10")]
-    SignedRawBytesResponse(celestia::SignedRawBytesResponse),
+    PingResponse(v1beta1::PingResponse),
 }
